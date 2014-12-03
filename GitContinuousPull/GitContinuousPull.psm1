@@ -103,7 +103,7 @@ function Start-GitContinuousPull
                     "First time clone detected. Execute PostAction." | WriteMessage
                     $PostAction | %{& $_}
                 }
-                (("Already up-to-date." -ne ($GitContinuousPull.Output | select -Last 1)) -and (($GitContinuousPull.ErrorOutput.Count -ne 0) -and $isError)) {
+                (($GitContinuousPull.ExitCode -eq 0) -and (($GitContinuousPull.Output | select -Last 1) -notmatch "Already up-to-date.")) {
                     "Pull detected change. Execute PostAction." | WriteMessage
                     $PostAction | %{& $_}
                 }
