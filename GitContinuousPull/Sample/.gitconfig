@@ -1,2 +1,2 @@
 [credential]
-	helper = !'C:\\Users\\USERNAME\\AppData\\Roaming\\GitCredStore\\git-credential-winstore.exe'
+	helper = wincred
