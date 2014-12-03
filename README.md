@@ -21,7 +21,7 @@ $param = @(
     @{
         RepositoryUrl = "https://github.com/guitarrapc/valentia.git"
         GitPath = "C:\Repository"
-        LogPath = "C:\logs\valentia"
+        LogFolderPath = "C:\logs\valentia"
         LogName = "valentia-$((Get-Date).ToString("yyyyMMdd-HHmmss")).log"
         PostAction = {PowerShell -File "C:\Repository\valentia\valentia\Tools\install.ps1"}
     }
