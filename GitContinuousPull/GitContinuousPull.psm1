@@ -143,10 +143,7 @@ function Start-GitContinuousPull
         {
             $credential = Get-ValentiaCredential -TargetName git
             $targetName = "git:https://{0}@github.com" -f $credential.UserName
-
-            # Check git credential is already exist.
-            if ((Get-ValentiaCredential -TargetName $targetName -Type Generic -ErrorAction SilentlyContinue | measure).Count -eq 1){ "git credential found from Windows Credential Manager as TargetName : '{0}'." -f $targetName | WriteMessage; return; }
-            
+           
             # Set git credential from backup credential
             "git credential was missing. Set git credential to Windows Credential Manager as TargetName : {0}." -f $targetName | WriteMessage
             $result = Set-ValentiaCredential -TargetName $targetName -Credential $Credential -Type Generic
