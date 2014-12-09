@@ -141,16 +141,35 @@ function Start-GitContinuousPull
                     
         function GitCred
         {
-            $credential = Get-ValentiaCredential -TargetName git
-            $targetName = "git:https://{0}@github.com" -f $credential.UserName
-           
-            # Set git credential from backup credential
-            "git credential was missing. Set git credential to Windows Credential Manager as TargetName : {0}." -f $targetName | WriteMessage
-            $result = Set-ValentiaCredential -TargetName $targetName -Credential $Credential -Type Generic
+            $ErrorActionPreference = "Continue"
 
-            # result
-            if ($result -eq $false){ throw New-Object System.InvalidOperationException ("Failed to set credential. Make sure you have set Windows Credential as targetname 'git'.") }
-            "Set credential for github into Windows Credential Manager completed." | WriteMessage
+            try
+            {
+                # Check git credential is already exist.
+                if ((Get-ValentiaCredential -TargetName $targetName -Type Generic -ErrorAction SilentlyContinue | measure).Count -eq 1)
+                {
+                    "git credential found from Windows Credential Manager as TargetName : '{0}'." -f $targetName | WriteMessage; 
+                    return; 
+                }
+                else
+                {
+                    $credential = Get-ValentiaCredential -TargetName git
+                    $targetName = "git:https://{0}@github.com" -f $credential.UserName
+           
+                    # Set git credential from backup credential
+                    "git credential was missing. Set git credential to Windows Credential Manager as TargetName : {0}." -f $targetName | WriteMessage
+                    $result = Set-ValentiaCredential -TargetName $targetName -Credential $Credential -Type Generic
+
+                    # result
+                    if ($result -eq $false){ throw New-Object System.InvalidOperationException ("Failed to set credential. Make sure you have set Windows Credential as targetname 'git'.") }
+                    "Set credential for github into Windows Credential Manager completed." | WriteMessage
+                    return;
+                }
+            }
+            finally
+            {
+                $ErrorActionPreference = $GitContinuousPull.preference.ErrorActionPreference.Original
+            }
         }
 
         function NewFolder ([string]$Path)
