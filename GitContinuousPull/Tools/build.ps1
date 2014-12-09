@@ -4,7 +4,7 @@ $module.ExportPath = Split-Path $PSCommandPath -Parent
 $module.modulePath = Split-Path -parent $module.ExportPath
 $module.fileEncode = [Microsoft.PowerShell.Commands.FileSystemCmdletProviderEncoding]'utf8'
 
-$module.moduleVersion = "1.0.0"
+$module.moduleVersion = "1.1.0"
 $module.description = "PowerShell simple git continuous delivery module.";
 $module.RequiredModules = @("valentia")
 
