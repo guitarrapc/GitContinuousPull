@@ -80,28 +80,29 @@ function Start-GitContinuousPull
 
         # initialize
         $GitContinuousPull.firstClone = $false
-        $GitContinuousPull.Output = $GitContinuousPull.ErrorOutput = New-Object "System.Collections.Generic.List[string]"
 
         # Execute
-        GitClone -Path $GitPath -RepositoryUrl $RepositoryUrl
-        GitPull -Path $GitPath -RepositoryUrl $RepositoryUrl
+        $gitClone = GitClone -Path $GitPath -RepositoryUrl $RepositoryUrl
+        $gitPull = GitPull -Path $GitPath -RepositoryUrl $RepositoryUrl
 
         # Normal handling
-        if ($GitContinuousPull.Output.Count -ne 0){ $GitContinuousPull.Output | WriteMessage }
+        if ($gitPull.StandardOutput.Count -ne 0){ $gitPull.StandardOutput | WriteMessage }
 
         # Error handling
-        $isError = $GitContinuousPull.ErrorOutput.ToString() -ne $GitContinuousPull.Output.ToString()
-        if (($GitContinuousPull.ErrorOutput.Count -ne 0) -and $isError){ $GitContinuousPull.ErrorOutput | WriteMessage }
+        $isError = $gitPull.ErrorOutput -ne $gitPull.StandardOutput
+        if (($gitPull.ErrorOutput.Count -ne 0) -and $isError){ $gitPull.ErrorOutput | WriteMessage }
             
         # PostAction
-        if ($PostAction.Count -eq 0){ return; }
+        if (($PostAction | measure).Count -eq 0){ return; }
         switch ($true)
         {
-            $GitContinuousPull.firstClone {
+            $GitContinuousPull.firstClone
+            {
                 "First time clone detected. Execute PostAction." | WriteMessage
                 $PostAction | %{& $_}
             }
-            (($GitContinuousPull.ExitCode -eq 0) -and (($GitContinuousPull.Output | select -Last 1) -notmatch "Already up-to-date.")) {
+            (($GitContinuousPull.ExitCode -eq 0) -and (($gitPull.Output | select -Last 1) -notmatch "Already up-to-date."))
+            {
                 "Pull detected change. Execute PostAction." | WriteMessage
                 $PostAction | %{& $_}
             }
@@ -118,7 +119,7 @@ function Start-GitContinuousPull
         {
             if (-not (Test-Path $LogPath))
             {
-                New-Item -ItemType Directory -Path $LogPath | Format-Table | Out-String | Write-Verbose
+                New-Item -ItemType Directory -Path $LogPath | Format-Table | Out-String -Stream | Write-Verbose
             }
             $GitContinuousPull.log =  @{
                 FullPath = Join-Path $LogPath $logName
@@ -197,36 +198,136 @@ function Start-GitContinuousPull
             $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
 
             # git pull
-            "Pulling Repository '{0}' to '{1}'" -f $repository, $Path | WriteMessage
-            GitCommand -Arguments "pull" -WorkingDirectory (Join-Path $Path $repository)
+            $workingDirectory = Join-Path $Path $repository
+            "Pulling Repository '{0}' at '{1}'" -f $repository, $workingDirectory | WriteMessage
+            GitCommand -Arguments "pull" -WorkingDirectory $workingDirectory
         }
 
-        function GitCommand ([string]$Arguments, [string]$WorkingDirectory)
+        function GitCommand 
         {
-            try
-            {
-                # prerequisites
-                $psi = New-object System.Diagnostics.ProcessStartInfo 
-                $psi.CreateNoWindow = $true
-                $psi.UseShellExecute = $false
-                $psi.RedirectStandardOutput = $true
-                $psi.RedirectStandardError = $true
-                $psi.FileName = "git.exe"
-                $psi.Arguments = $Arguments
-                $psi.WorkingDirectory = $WorkingDirectory
+            [OutputType([PSCustomObject])]
+            [CmdletBinding()]
+            param
+            (
+                [Parameter(Mandatory = 1, Position = 0)]
+                [string]$Arguments,
+        
+                [Parameter(Mandatory = 0, Position = 1)]
+                [string]$WorkingDirectory = ".",
 
-                # execution
-                $process = New-Object System.Diagnostics.Process 
-                $process.StartInfo = $psi
-                $process.Start() > $null
-                $process.WaitForExit() 
-                $process.StandardOutput.ReadToEnd() | where {"" -ne $_} | %{$GitContinuousPull.Output.Add($_)}
-                $process.StandardError.ReadToEnd() | where {"" -ne $_} | %{$GitContinuousPull.ErrorOutput.Add($_)}
-                $GitContinuousPull.ExitCode = $process.ExitCode
-            }
-            finally
+                [Parameter(Mandatory = 0, Position = 2)]
+                [int]$TimeoutMS = $GitContinuousPull.TimeoutMS
+            )
+
+            end
             {
-                if ($null -ne $process){ $process.Dispose() }
+                try
+                {
+                    # new GitProcess
+                    $gitProcess = NewGitProcess -Arguments $Arguments -WorkingDirectory $WorkingDirectory
+                
+                    # Event Handler for Output
+                    $stdEvent = Register-ObjectEvent -InputObject $gitProcess -EventName OutputDataReceived -Action $scripBlock -MessageData $stdSb
+                    $errorEvent = Register-ObjectEvent -InputObject $gitProcess -EventName ErrorDataReceived -Action $scripBlock -MessageData $errorSb
+
+                    # execution
+                    $gitProcess.Start() > $null
+                    $gitProcess.BeginOutputReadLine()
+                    $gitProcess.BeginErrorReadLine()
+
+                    # wait for complete
+                    WaitProcessComplete -Process $gitProcess -TimeoutMS $TimeoutMS
+
+                    # verbose Event Result
+                    $stdEvent, $errorEvent | VerboseOutput
+
+                    # output
+                    return GetCommandResult -Process $gitProcess -StandardStringBuilder $stdSb -ErrorStringBuilder $errorSb
+                }
+                finally
+                {
+                    if ($null -ne $process){ $process.Dispose() }
+                    if ($null -ne $stdEvent){ Unregister-Event -SourceIdentifier $stdEvent.Name }
+                    if ($null -ne $errorEvent){ Unregister-Event -SourceIdentifier $errorEvent.Name }
+                    if ($null -ne $stdEvent){ $stdEvent.Dispose() }
+                    if ($null -ne $errorEvent){ $errorEvent.Dispose() }        
+                }
+            }
+
+            begin
+            {
+                # Prerequisites       
+                $stdSb = New-Object -TypeName System.Text.StringBuilder
+                $errorSb = New-Object -TypeName System.Text.StringBuilder
+                $scripBlock = 
+                {
+                    if (-not [String]::IsNullOrEmpty($EventArgs.Data))
+                    {
+                        
+                        $Event.MessageData.AppendLine($Event.SourceEventArgs.Data)
+                    }
+                }
+
+                function NewGitProcess ([string]$Arguments, [string]$WorkingDirectory)
+                {
+                    "Creating Git Process with Argument '{0}', WorkingDirectory '{1}'" -f $Arguments, $WorkingDirectory | VerboseOutput
+                    "Execute git command : 'git {0}'" -f $Arguments, $WorkingDirectory | VerboseOutput
+                    # ProcessStartInfo
+                    $psi = New-object System.Diagnostics.ProcessStartInfo 
+                    $psi.CreateNoWindow = $true
+                    $psi.LoadUserProfile = $true
+                    $psi.UseShellExecute = $false
+                    $psi.RedirectStandardOutput = $true
+                    $psi.RedirectStandardError = $true
+                    $psi.FileName = "git.exe"
+                    $psi.Arguments+= $Arguments
+                    $psi.WorkingDirectory = $WorkingDirectory
+
+                    # Set Process
+                    $process = New-Object System.Diagnostics.Process 
+                    $process.StartInfo = $psi
+                    return $process
+                }
+
+                function WaitProcessComplete ([System.Diagnostics.Process]$Process, [int]$TimeoutMS)
+                {
+                    "Waiting for git command complete. It will Timeout in {0}ms" -f $TimeoutMS | VerboseOutput
+                    $isComplete = $Process.WaitForExit($TimeoutMS)
+                    if (-not $isComplete)
+                    {
+                        "Timeout detected for {0}ms. Kill process immediately" -f $timeoutMS | VerboseOutput
+                        $Process.Kill()
+                        $Process.CancelOutputRead()
+                        $Process.CancelErrorRead()
+                    }
+                }
+
+                function GetCommandResult ([System.Diagnostics.Process]$Process, [System.Text.StringBuilder]$StandardStringBuilder, [System.Text.StringBuilder]$ErrorStringBuilder)
+                {
+                    'Get git command result string.' | VerboseOutput
+                    $standardString = $StandardStringBuilder.ToString()
+                    $errorString = $ErrorStringBuilder.ToString()
+                    if(($process.ExitCode -eq 0) -and ($standardString -eq "") -and ($errorString -ne ""))
+                    {
+                        $standardOutput = $errorString
+                        $errorOutput = ""
+                    }
+                    else
+                    {
+                        $standardOutput = $standardString
+                        $errorOutput = $errorString
+                    }
+                    return [PSCustomObject]@{
+                        StandardOutput = $standardOutput
+                        ErrorOutput = $errorOutput
+                        ExitCode = $process.ExitCode
+                    }
+                }
+
+                filter VerboseOutput
+                {
+                    $_ | Out-String -Stream | Write-Verbose
+                }
             }
         }
 
@@ -274,5 +375,6 @@ $GitContinuousPull.preference = [ordered]@{
 $GitContinuousPull.log = @{}
 $GitContinuousPull.firstClone = $false
 $GitContinuousPull.ExitCode = 0
+$GitContinuousPull.TimeoutMS = 120000 # 2min
 
 Export-ModuleMember -Function * -Variable $GitContinuousPull.name
