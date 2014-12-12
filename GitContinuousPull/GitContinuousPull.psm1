@@ -49,10 +49,10 @@ function Start-GitContinuousPull
     param
     (
         [Parameter(HelpMessage = "Git Repository Url", Position = 0, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
-        [uri[]]$RepositoryUrl,
+        [uri]$RepositoryUrl,
 
-        [Parameter(HelpMessage = "Input Full path of Git REpository Parent Folder", Position = 1, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
-        [string[]]$GitPath,
+        [Parameter(HelpMessage = "Input Full path of Git Repository Parent Folder", Position = 1, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+        [string]$GitPath,
  
         [Parameter(HelpMessage = "Input path of Log Folder", Position = 2, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
         [string]$LogFolderPath,
@@ -76,39 +76,36 @@ function Start-GitContinuousPull
         # Git credential checking.
         GitCred
 
-        for ($i = 0; $i -lt $GitPath.Count; $i++)
-        {
-            Write-Verbose ("Starting for RepotirotyUrl '{0}'" -f $RepositoryUrl)
+        Write-Verbose ("Starting for RepotirotyUrl '{0}'" -f $RepositoryUrl)
 
-            # initialize
-            $GitContinuousPull.firstClone = $false
-            $GitContinuousPull.Output = $GitContinuousPull.ErrorOutput = New-Object "System.Collections.Generic.List[string]"
+        # initialize
+        $GitContinuousPull.firstClone = $false
+        $GitContinuousPull.Output = $GitContinuousPull.ErrorOutput = New-Object "System.Collections.Generic.List[string]"
 
-            # Execute
-            GitClone -Path $GitPath[$i] -RepositoryUrl $RepositoryUrl[$i]
-            GitPull -Path $GitPath[$i] -RepositoryUrl $RepositoryUrl[$i]
+        # Execute
+        GitClone -Path $GitPath -RepositoryUrl $RepositoryUrl
+        GitPull -Path $GitPath -RepositoryUrl $RepositoryUrl
 
-            # Normal handling
-            if ($GitContinuousPull.Output.Count -ne 0){ $GitContinuousPull.Output | WriteMessage }
+        # Normal handling
+        if ($GitContinuousPull.Output.Count -ne 0){ $GitContinuousPull.Output | WriteMessage }
 
-            # Error handling
-            $isError = $GitContinuousPull.ErrorOutput.ToString() -ne $GitContinuousPull.Output.ToString()
-            if (($GitContinuousPull.ErrorOutput.Count -ne 0) -and $isError){ $GitContinuousPull.ErrorOutput | WriteMessage }
+        # Error handling
+        $isError = $GitContinuousPull.ErrorOutput.ToString() -ne $GitContinuousPull.Output.ToString()
+        if (($GitContinuousPull.ErrorOutput.Count -ne 0) -and $isError){ $GitContinuousPull.ErrorOutput | WriteMessage }
             
-            # PostAction
-            if ($PostAction.Count -eq 0){ return; }
-            switch ($true)
-            {
-                $GitContinuousPull.firstClone {
-                    "First time clone detected. Execute PostAction." | WriteMessage
-                    $PostAction | %{& $_}
-                }
-                (($GitContinuousPull.ExitCode -eq 0) -and (($GitContinuousPull.Output | select -Last 1) -notmatch "Already up-to-date.")) {
-                    "Pull detected change. Execute PostAction." | WriteMessage
-                    $PostAction | %{& $_}
-                }
-                default { "None of change for git detected. Skip PostAction."  | WriteMessage }
+        # PostAction
+        if ($PostAction.Count -eq 0){ return; }
+        switch ($true)
+        {
+            $GitContinuousPull.firstClone {
+                "First time clone detected. Execute PostAction." | WriteMessage
+                $PostAction | %{& $_}
             }
+            (($GitContinuousPull.ExitCode -eq 0) -and (($GitContinuousPull.Output | select -Last 1) -notmatch "Already up-to-date.")) {
+                "Pull detected change. Execute PostAction." | WriteMessage
+                $PostAction | %{& $_}
+            }
+            default { "None of change for git detected. Skip PostAction."  | WriteMessage }
         }
     }
     
