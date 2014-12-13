@@ -224,7 +224,7 @@ function Start-GitContinuousPull
                 }
                 finally
                 {
-                    if ($null -ne $process){ $process.Dispose() }
+                    if ($null -ne $gitProcess){ $gitProcess.Dispose() }
                     if ($null -ne $stdEvent){ Unregister-Event -SourceIdentifier $stdEvent.Name }
                     if ($null -ne $errorEvent){ Unregister-Event -SourceIdentifier $errorEvent.Name }
                     if ($null -ne $stdEvent){ $stdEvent.Dispose() }
