@@ -12,10 +12,10 @@
 # RootModule = ''
 
 # Version number of this module.
-ModuleVersion = '1.2.0'
+ModuleVersion = '1.3.0'
 
 # ID used to uniquely identify this module
-GUID = 'c490ee0e-8666-417a-9f8d-868dbfef5403'
+GUID = 'dc6aacc1-ffff-40b5-a1eb-f65a8e3e9ed5'
 
 # Author of this module
 Author = 'guitarrapc'
@@ -66,7 +66,7 @@ RequiredModules = @('valentia')
 NestedModules = @('GitContinuousPull.psm1')
 
 # Functions to export from this module
-FunctionsToExport = '*'
+FunctionsToExport = 'Start-GitContinuousPull'
 
 # Cmdlets to export from this module
 CmdletsToExport = '*'

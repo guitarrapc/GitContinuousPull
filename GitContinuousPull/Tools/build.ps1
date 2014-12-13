@@ -4,13 +4,13 @@ $module.ExportPath = Split-Path $PSCommandPath -Parent
 $module.modulePath = Split-Path -parent $module.ExportPath
 $module.fileEncode = [Microsoft.PowerShell.Commands.FileSystemCmdletProviderEncoding]'utf8'
 
-$module.moduleVersion = "1.2.0"
+$module.moduleVersion = "1.3.0"
 $module.description = "PowerShell simple git continuous delivery module.";
 $module.RequiredModules = @("valentia")
-
 $module.clrVersion = "4.0.0.0" # .NET 4.0 with StandAlone Installer "4.0.30319.1008" or "4.0.30319.1" , "4.0.30319.17929" (Win8/2012)
 
-$module.functionToExport = @("*")
+$module.functionToExport = @("Start-GitContinuousPull")
+
 $script:moduleManufest = @{
     Path = "{0}.psd1" -f $module.name
     Author = "guitarrapc";

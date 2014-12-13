@@ -81,16 +81,15 @@ function Start-GitContinuousPull
         # initialize
         $GitContinuousPull.firstClone = $false
 
-        # Execute
+        # git clone
         $gitClone = GitClone -Path $GitPath -RepositoryUrl $RepositoryUrl
+        if (-not [String]::IsNullOrWhiteSpace($gitClone.StandardOutput)){ $gitClone.StandardOutput | WriteMessage }
+        if (-not [String]::IsNullOrWhiteSpace($gitClone.ErrorOutput)){ $gitClone.ErrorOutput | WriteMessage }
+
+        # git pull
         $gitPull = GitPull -Path $GitPath -RepositoryUrl $RepositoryUrl
-
-        # Normal handling
-        if ($gitPull.StandardOutput.Count -ne 0){ $gitPull.StandardOutput | WriteMessage }
-
-        # Error handling
-        $isError = $gitPull.ErrorOutput -ne $gitPull.StandardOutput
-        if (($gitPull.ErrorOutput.Count -ne 0) -and $isError){ $gitPull.ErrorOutput | WriteMessage }
+        if (-not [String]::IsNullOrWhiteSpace($gitPull.StandardOutput)){ $gitPull.StandardOutput | WriteMessage }
+        if ((-not [String]::IsNullOrWhiteSpace($gitPull.ErrorOutput)) -and ($gitPull.ErrorOutput -ne $gitPull.StandardOutput)){ $gitPull.ErrorOutput | WriteMessage }
             
         # PostAction
         if (($PostAction | measure).Count -eq 0){ return; }
@@ -114,26 +113,14 @@ function Start-GitContinuousPull
     {
         # Argument check
         if ($RepositoryUrl.Count -ne $GitPath.Count){ throw New-Object System.ArgumentException ("Argument for Repogitory & GitPath not match exception.") }
-
-        function LogSetup ($LogPath, $LogName)
-        {
-            if (-not (Test-Path $LogPath))
-            {
-                New-Item -ItemType Directory -Path $LogPath | Format-Table | Out-String -Stream | Write-Verbose
-            }
-            $GitContinuousPull.log =  @{
-                FullPath = Join-Path $LogPath $logName
-                tempFullPath = Join-Path $LogPath ("temp" + $logName)
-                tempErrorFullPath = Join-Path $LogPath ("tempError" + $logName)
-            }
-        }
+        if (-not $RepositoryUrl.AbsoluteUri.EndsWith(".git")){ throw New-Object System.ArgumentException ("Wrong argument string found exception. RepositoryUrl '{0}' not endwith '.git'." -f $RepositoryUrl.AbsoluteUri) }
 
         function KillGit
         {
             $IsgitExist = Get-Process | where Name -like "git*" | Stop-Process -Force -PassThru
-            if ($IsgitExist)
+            if ($IsgitExist.Count -ne 0)
             {
-                "git process found. Killed process Name '{0}'" -f ($IsgitExist.Name -join ",") | WriteMessage
+                $IsgitExist | %{ "git process found. Killed process Name : '{0}', Id : '{1}'" -f $_.Name, $_.Id | WriteMessage }
             }
         }
                     
@@ -165,15 +152,6 @@ function Start-GitContinuousPull
                     return;
                 }
             }
-        }
-
-        function NewFolder ([string]$Path)
-        {
-            if (Test-Path $Path){ return $false; }
-
-            $GitContinuousPull.firstClone = $true
-            New-Item -Path $Path -ItemType Directory -Force | Out-String | Write-Verbose
-            return $true
         }
 
         function GetRepositoryName ([uri]$RepositoryUrl)
@@ -331,6 +309,28 @@ function Start-GitContinuousPull
             }
         }
 
+        function NewFolder ([string]$Path)
+        {
+            if (Test-Path $Path){ return $false; }
+
+            $GitContinuousPull.firstClone = $true
+            New-Item -Path $Path -ItemType Directory -Force | Out-String | Write-Verbose
+            return $true
+        }
+
+        function LogSetup ($LogPath, $LogName)
+        {
+            if (-not (Test-Path $LogPath))
+            {
+                New-Item -ItemType Directory -Path $LogPath | Format-Table | Out-String -Stream | Write-Verbose
+            }
+            $GitContinuousPull.log =  @{
+                FullPath = Join-Path $LogPath $logName
+                tempFullPath = Join-Path $LogPath ("temp" + $logName)
+                tempErrorFullPath = Join-Path $LogPath ("tempError" + $logName)
+            }
+        }
+
         filter WriteMessage
         {
             $message = "[{0}][{1}]" -f (Get-Date), $_
@@ -342,7 +342,6 @@ function Start-GitContinuousPull
         }
     }
 }
-
 
 #-- Private Loading Module Parameters --#
 # contains default base configuration, may not be override without version update.
