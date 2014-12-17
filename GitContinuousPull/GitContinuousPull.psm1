@@ -126,31 +126,33 @@ function Start-GitContinuousPull
                     
         function GitCred
         {
-            $private:ErrorActionPreference = "Continue"
-
             $credential = Get-ValentiaCredential -TargetName git
-            $targetName = "git:https://{0}@github.com" -f $credential.UserName
+            if (($credential.UserName | measure).Count -eq 0){ throw New-Object System.NullReferenceException ("Could not find Windows Credential Manager record as Target Name 'git'. Make sure you have already set credential." ) }
 
-            # Check git credential is already exist.
-            switch ((Get-ValentiaCredential -TargetName $targetName -Type Generic -ErrorAction SilentlyContinue | measure).Count)
+            $targetName = @(
+                # WinCred
+                ("git:https://{0}@github.com" -f $credential.UserName),
+                # WinStore
+                "git:https://github.com"
+            )
+
+            foreach ($x in $targetName)
             {
-                1 
-                {
-                    # return without any action
-                    "git credential found from Windows Credential Manager as TargetName : '{0}'." -f $targetName | WriteMessage; 
-                    return; 
-                }
-                default
+                # Check git credential is already exist.
+                if ((Get-ValentiaCredential -TargetName $x -Type Generic -ErrorAction SilentlyContinue | measure).Count -eq 0)
                 {
                     # Set git credential from backup credential
-                    "git credential was missing. Set git credential to Windows Credential Manager as TargetName : {0}." -f $targetName | WriteMessage
-                    $result = Set-ValentiaCredential -TargetName $targetName -Credential $Credential -Type Generic
+                    "git credential was missing. Set git credential to Windows Credential Manager as TargetName : {0}." -f $x | WriteMessage
+                    $result = Set-ValentiaCredential -TargetName $x -Credential $Credential -Type Generic
 
                     # result
                     if ($result -eq $false){ throw New-Object System.InvalidOperationException ("Failed to set credential. Make sure you have set Windows Credential as targetname 'git'.") }
                     "Set credential for github into Windows Credential Manager completed." | WriteMessage
-                    return;
+                    continue;
                 }
+
+                # return without any action
+                "git credential found from Windows Credential Manager as TargetName : '{0}'." -f $x | WriteMessage; 
             }
         }
 
