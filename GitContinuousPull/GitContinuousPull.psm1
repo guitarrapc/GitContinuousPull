@@ -16,16 +16,37 @@ function Start-GitContinuousPull
 
     See NOTES for the details.
 .EXAMPLE
-    Import-Module GitContinuousPull
+    # Run as Administrator
+    Import-Module GitContinuousPull -Force -Verbose
+
+    # Automatically Clone -> Pull GitHub repository
+    $param = @(
+        @{
+            RepositoryUrl = "https://github.com/guitarrapc/DSCResources.git"
+            GitPath = "C:\Repository"
+            LogFolderPath = "C:\logs\DSCResources"
+            LogName = "$((Get-Date).ToString("yyyyMMdd-HHmmss")).log"
+            PostAction = {Copy-Item -Recurse -Path "C:\Repository\DSCResources\Custom\GraniResource" -Destination 'C:\Program Files\WindowsPowerShell\Modules' -Force}
+        }
+    )
+
+    $param | %{Start-GitContinuousPull @_ -Verbose}
+    # this will clone DSCResources and copy GraniResource to Resource directory.
+
+.EXAMPLE
+    Import-Module GitContinuousPull -Force -Verbose
+
+    # Automatically Clone -> Pull GitHub repository
     $param = @(
         @{
             RepositoryUrl = "https://github.com/guitarrapc/valentia.git"
             GitPath = "C:\Repository"
-            LogFolderPath = "C:\logs\GitContinuousPull"
-            LogName = "valentia-{0}.log" -f (Get-Date).ToString("yyyyMMdd-HHmmss")
-            PostAction = {PowerShell -File "C:\Repository\valentia\valentia\Tools\install.ps1"}
+            LogFolderPath = "C:\logs\valentia"
+            LogName = "$((Get-Date).ToString("yyyyMMdd-HHmmss")).log"
+            PostAction = { . C:\Repository\valentia\valentia\Tools\install.ps1}
         }
     )
+
     $param | %{Start-GitContinuousPull @_ -Verbose}
     # this will clone valentia into C:\Repository\valentia and pull it to the latest commit.
 
@@ -48,20 +69,20 @@ function Start-GitContinuousPull
         DefaultParameterSetName = "")]
     param
     (
-        [Parameter(HelpMessage = "Git Repository Url", Position = 0, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+        [Parameter(Position = 0, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Git Repository Url")]
         [uri]$RepositoryUrl,
 
-        [Parameter(HelpMessage = "Input Full path of Git Repository Parent Folder", Position = 1, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+        [Parameter(Position = 1, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input Full path of Git Repository Parent Folder")]
         [string]$GitPath,
  
-        [Parameter(HelpMessage = "Input path of Log Folder", Position = 2, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+        [Parameter(Position = 2, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input path of Log Folder")]
         [string]$LogFolderPath,
 
-        [Parameter(HelpMessage = "Input name of Log", Position = 3, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+        [Parameter(Position = 3, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input name of Log")]
         [ValidateNotNullOrEmpty()]
         [string]$LogName,
 
-        [Parameter(HelpMessage = "Script Block to execute when git detect change.", Position = 4, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+        [Parameter(Position = 4, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Script Block to execute when git detect change.")]
         [scriptBlock[]]$PostAction
     )
 
@@ -343,6 +364,70 @@ function Start-GitContinuousPull
             }
         }
     }
+}
+
+function Set-GitContinuousPullGitConfig
+{
+<#
+.Synopsis
+    Set .gitconfig for a credential.helper.
+.DESCRIPTION
+    You can select credential helper from WinCred or WinStore
+.EXAMPLE
+    Set-GitContinuousPullGitConfig -WinCred
+    # set git-credential-wincred.exe as a credential.helper.
+.EXAMPLE
+    Set-GitContinuousPullGitConfig -WinStore
+    # set git-credential-winstore.exe as a credential.helper. Make sure you have already placed exe in \Git\libexec\git-core\git-credential-winstore.exe
+.EXAMPLE
+    Set-GitContinuousPullGitConfig -WinStore -DownloadWinStore
+    # set git-credential-winstore.exe as a credential.helper. Also download git-credential-winstore into \Git\libexec\git-core\git-credential-winstore.exe
+#>
+    [OutputType([string[]])]
+    [CmdletBinding(DefaultParameterSetName = "wincred")]
+    param
+    (
+        [Parameter(Position = 0, Mandatory = $true, ParameterSetName = "wincred", HelpMessage = "Use git-credential-wincred for the credential.helper")]
+        [switch]$WinCred,
+
+        [Parameter(Position = 0, Mandatory = $true, ParameterSetName = "winstore",HelpMessage = "Use git-credential-winstore for the credential.helper")]
+        [switch]$WinStore,
+
+        [Parameter(Position = 1, Mandatory = $false, ParameterSetName = "winstore",HelpMessage = "Download git credential winstore from CodePlex. https://gitcredentialstore.codeplex.com/")]
+        [switch]$DownloadWinStore
+    )
+
+    function SetGitCredentialHelper ([string]$helper)
+    {
+        Write-Verbose ("Setting {0} as a credential.helper in .gitconfig" -f $helper)
+        . git config --global credential.helper $helper
+        Write-Verbose "Complete writing credential.helper into .gitconfig"
+    }
+
+    function DownloadWinStore
+    {
+        $outpath = 'C:\Program Files (x86)\Git\libexec\git-core\git-credential-winstore.exe'
+        Write-Verbose ("Downloading git-credential-winstore.exe from CodePlex and place it in git path '{0}'." -f $outpath)
+        Start-Process -Verb runas -FilePath PowerShell -ArgumentList "-Command Invoke-RestMethod -Method Get -Uri https://gitcredentialstore.codeplex.com/downloads/get/640464# -OutFile 'C:\Program Files (x86)\Git\libexec\git-core\git-credential-winstore.exe'" -Wait -WindowStyle Hidden
+        Test-Path $outpath
+    }
+
+    function ShowGitConfig
+    {
+        Write-Verbose "Showing git config --list."
+        . git config --list
+    }
+
+    switch ($true)
+    {
+        $wincred  { SetGitCredentialHelper -helper wincred }
+        $winstore
+        { 
+            if ($DownloadWinStore){ DownloadWinStore }
+            SetGitCredentialHelper -helper winstore
+        }
+    }
+    ShowGitConfig
 }
 
 #-- Private Loading Module Parameters --#

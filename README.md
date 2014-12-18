@@ -11,9 +11,30 @@ This can do only simple thing, but something enough for some usage.
 Usage
 ----
 
+Automate DSCResources delivery for localhost.
+
+```PowerShell
+# Run as Administrator
+Import-Module GitContinuousPull -Force -Verbose
+
+# Automatically Clone -> Pull GitHub repository
+$param = @(
+    @{
+        RepositoryUrl = "https://github.com/guitarrapc/DSCResources.git"
+        GitPath = "C:\Repository"
+        LogFolderPath = "C:\logs\DSCResources"
+        LogName = "$((Get-Date).ToString("yyyyMMdd-HHmmss")).log"
+        PostAction = {Copy-Item -Recurse -Path "C:\Repository\DSCResources\Custom\GraniResource" -Destination 'C:\Program Files\WindowsPowerShell\Modules' -Force}
+    }
+)
+
+$param | %{Start-GitContinuousPull @_ -Verbose}
+```
+
 Automate valentia delivery for localhost.
 
 ```PowerShell
+# Run as Administrator
 Import-Module GitContinuousPull -Force -Verbose
 
 # Automatically Clone -> Pull GitHub repository
@@ -22,8 +43,8 @@ $param = @(
         RepositoryUrl = "https://github.com/guitarrapc/valentia.git"
         GitPath = "C:\Repository"
         LogFolderPath = "C:\logs\valentia"
-        LogName = "valentia-$((Get-Date).ToString("yyyyMMdd-HHmmss")).log"
-        PostAction = {PowerShell -File "C:\Repository\valentia\valentia\Tools\install.ps1"}
+        LogName = "$((Get-Date).ToString("yyyyMMdd-HHmmss")).log"
+        PostAction = { . C:\Repository\valentia\valentia\Tools\install.ps1}
     }
 )
 
@@ -51,12 +72,21 @@ Open PowerShell or Command prompt, paste the text below and press Enter.
 Set git-credential-wincred as helper to .gitconfig
 ----
 
-Run following command to add helper information inside .gitconfig.
+Run following command to add helper information inside .gitconfig. (This is equivalent to "git config --global credential.helper wincred")
 
 ```
-# set git-credential-wincred into .girhub. Now git.exe read github credential from Windows Credential Manager.
-git config --global credential.helper wincred
+Set-GitContinuousPullGitConfig -WinCred
 ```
+
+or you can use git-credential-winstore for helper.
+
+```
+Set-GitContinuousPullGitConfig -WinStore
+
+# if you want to download git-credential-winstore use this.
+Set-GitContinuousPullGitConfig -WinStore -DownloadWinStore
+```
+
 
 Set git credential into Windows Credential Manager
 ----
@@ -71,3 +101,5 @@ Module force you to set Credential TargetName as ```git``` for backup and auto r
 # set your github authenticated user/password
 Set-ValentiaCredential -TargetName git
 ```
+
+I recommend to use Application Token for a credential.
