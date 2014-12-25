@@ -83,7 +83,10 @@ function Start-GitContinuousPull
         [string]$LogName,
 
         [Parameter(Position = 4, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Script Block to execute when git detect change.")]
-        [scriptBlock[]]$PostAction
+        [scriptBlock[]]$PostAction,
+
+        [Parameter(Position = 5, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input Git target folder name to be created in local.")]
+        [string]$GitFolderName = ""
     )
 
     process
@@ -103,12 +106,12 @@ function Start-GitContinuousPull
         $GitContinuousPull.firstClone = $false
 
         # git clone
-        $gitClone = GitClone -Path $GitPath -RepositoryUrl $RepositoryUrl
+        $gitClone = GitClone -Path $GitPath -RepositoryUrl $RepositoryUrl -GitFolderName $GitFolderName
         if (-not [String]::IsNullOrWhiteSpace($gitClone.StandardOutput)){ $gitClone.StandardOutput | WriteMessage }
         if (-not [String]::IsNullOrWhiteSpace($gitClone.ErrorOutput)){ $gitClone.ErrorOutput | WriteMessage }
 
         # git pull
-        $gitPull = GitPull -Path $GitPath -RepositoryUrl $RepositoryUrl
+        $gitPull = GitPull -Path $GitPath -RepositoryUrl $RepositoryUrl -GitFolderName $GitFolderName
         if (-not [String]::IsNullOrWhiteSpace($gitPull.StandardOutput)){ $gitPull.StandardOutput | WriteMessage }
         if ((-not [String]::IsNullOrWhiteSpace($gitPull.ErrorOutput)) -and ($gitPull.ErrorOutput -ne $gitPull.StandardOutput)){ $gitPull.ErrorOutput | WriteMessage }
             
@@ -182,24 +185,40 @@ function Start-GitContinuousPull
             return (Split-Path $RepositoryUrl -Leaf) -split "\.git" | select -First 1
         }
 
-        function GitClone ([string]$Path, [uri]$RepositoryUrl)
+        function GitClone ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName)
         {
-            # Folder checking
             $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
-            $created = NewFolder -Path (Join-Path $Path $repository)
-            if ($created -eq $false){ "Repository already cloned. Skip clone repository : '{0}'." -f $repository | WriteMessage; return; }
+
+            # Folder checking
+            $created = if ($GitFolderName -eq "")
+            {
+                NewFolder -Path (Join-Path $Path $repository)
+            }
+            else
+            {
+                NewFolder -Path (Join-Path $Path $GitFolderName)
+            }
+            if ($created -eq $false){ "Repository already cloned to '{0}'. Skip clone repository : '{1}'." -f $created, $repository | WriteMessage; return; }
 
             # git clone
             "Cloning Repository '{0}' to '{1}'" -f $repository, $Path | WriteMessage
-            GitCommand -Arguments "clone $RepositoryUrl" -WorkingDirectory $Path
+            GitCommand -Arguments "clone $RepositoryUrl $GitFolderName" -WorkingDirectory $Path
         }
 
-        function GitPull ([string]$Path, [uri]$RepositoryUrl)
+        function GitPull ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName)
         {
             $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
-
+            
+            $workingDirectory = if ($GitFolderName -eq "")
+            {
+                Join-Path $Path $repository
+            }
+            else
+            {
+                Join-Path $Path $GitFolderName
+            }
+            
             # git pull
-            $workingDirectory = Join-Path $Path $repository
             "Pulling Repository '{0}' at '{1}'" -f $repository, $workingDirectory | WriteMessage
             GitCommand -Arguments "pull" -WorkingDirectory $workingDirectory
         }

@@ -51,6 +51,27 @@ $param = @(
 $param | %{Start-GitContinuousPull @_ -Verbose}
 ```
 
+Custom Clone Folder name can be set with ```GitFolderName``` parameter. Below sample will clone valnetia as ```C:\Repository\hoge```.
+
+```PowerShell
+# Run as Administrator
+Import-Module GitContinuousPull -Force -Verbose
+
+# Automatically Clone -> Pull GitHub repository
+$param = @(
+    @{
+        RepositoryUrl = "https://github.com/guitarrapc/valentia.git"
+        GitPath = "C:\Repository"
+        LogFolderPath = "C:\logs\valentia"
+        LogName = "$((Get-Date).ToString("yyyyMMdd-HHmmss")).log"
+        PostAction = { . C:\Repository\valentia\valentia\Tools\install.ps1}
+        GitFolderName = "hoge"
+    }
+)
+
+$param | %{Start-GitContinuousPull @_ -Verbose}
+```
+
 Prerequisite
 ----
 

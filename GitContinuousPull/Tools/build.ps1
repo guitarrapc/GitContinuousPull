@@ -4,7 +4,7 @@ $module.ExportPath = Split-Path $PSCommandPath -Parent
 $module.modulePath = Split-Path -parent $module.ExportPath
 $module.fileEncode = [Microsoft.PowerShell.Commands.FileSystemCmdletProviderEncoding]'utf8'
 
-$module.moduleVersion = "1.4.1"
+$module.moduleVersion = "1.5.0"
 $module.description = "PowerShell simple git continuous delivery module.";
 $module.RequiredModules = @("valentia")
 $module.clrVersion = "4.0.0.0" # .NET 4.0 with StandAlone Installer "4.0.30319.1008" or "4.0.30319.1" , "4.0.30319.17929" (Win8/2012)
