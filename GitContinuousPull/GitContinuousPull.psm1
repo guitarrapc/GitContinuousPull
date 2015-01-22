@@ -521,6 +521,6 @@ $GitContinuousPull.preference = [ordered]@{
 $GitContinuousPull.log = @{}
 $GitContinuousPull.firstClone = $false
 $GitContinuousPull.ExitCode = 0
-$GitContinuousPull.TimeoutMS = 120000 # 2min
+$GitContinuousPull.TimeoutMS = 1200000 # 20min
 
 Export-ModuleMember -Function * -Variable $GitContinuousPull.name
