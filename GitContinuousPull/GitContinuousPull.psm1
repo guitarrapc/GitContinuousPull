@@ -1,5 +1,7 @@
 #Requires -Version 3.0
 
+#region Main function
+
 function Start-GitContinuousPull
 {
 <#
@@ -72,6 +74,10 @@ function Start-GitContinuousPull
         [Parameter(Position = 0, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Git Repository Url")]
         [uri]$RepositoryUrl,
 
+        [Parameter(Position = 0, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Git Branch Name. Default : master")]
+        [ValidateNotNullOrEmpty()]
+        [string]$Branch = "master",
+
         [Parameter(Position = 1, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input Full path of Git Repository Parent Folder")]
         [string]$GitPath,
  
@@ -105,13 +111,23 @@ function Start-GitContinuousPull
         # initialize
         $GitContinuousPull.firstClone = $false
 
+        $gitParameter = @{
+            Path = $GitPath
+            RepositoryUrl = $RepositoryUrl
+            GitFolderName = $GitFolderName
+        }
         # git clone
-        $gitClone = GitClone -Path $GitPath -RepositoryUrl $RepositoryUrl -GitFolderName $GitFolderName
+        $gitClone = GitClone @gitParameter
         if (-not [String]::IsNullOrWhiteSpace($gitClone.StandardOutput)){ $gitClone.StandardOutput | WriteMessage }
         if (-not [String]::IsNullOrWhiteSpace($gitClone.ErrorOutput)){ $gitClone.ErrorOutput | WriteMessage }
 
+        # got checkout
+        $gitCheckout = GitCheckOut @gitParameter -Branch $Branch
+        if (-not [String]::IsNullOrWhiteSpace($gitCheckout.StandardOutput)){ $gitCheckout.StandardOutput | WriteMessage }
+        if (-not [String]::IsNullOrWhiteSpace($gitCheckout.ErrorOutput)){ $gitCheckout.ErrorOutput | WriteMessage }
+        
         # git pull
-        $gitPull = GitPull -Path $GitPath -RepositoryUrl $RepositoryUrl -GitFolderName $GitFolderName
+        $gitPull = GitPull @gitParameter
         if (-not [String]::IsNullOrWhiteSpace($gitPull.StandardOutput)){ $gitPull.StandardOutput | WriteMessage }
         if ((-not [String]::IsNullOrWhiteSpace($gitPull.ErrorOutput)) -and ($gitPull.ErrorOutput -ne $gitPull.StandardOutput)){ $gitPull.ErrorOutput | WriteMessage }
             
@@ -180,177 +196,6 @@ function Start-GitContinuousPull
             }
         }
 
-        function GetRepositoryName ([uri]$RepositoryUrl)
-        {
-            return (Split-Path $RepositoryUrl -Leaf) -split "\.git" | select -First 1
-        }
-
-        function GitClone ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName)
-        {
-            $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
-
-            # Folder checking
-            $created = if ($GitFolderName -eq "")
-            {
-                NewFolder -Path (Join-Path $Path $repository)
-            }
-            else
-            {
-                NewFolder -Path (Join-Path $Path $GitFolderName)
-            }
-            if ($created -eq $false){ "Repository already cloned to '{0}'. Skip clone repository : '{1}'." -f $created, $repository | WriteMessage; return; }
-
-            # git clone
-            "Cloning Repository '{0}' to '{1}'" -f $repository, $Path | WriteMessage
-            GitCommand -Arguments "clone $RepositoryUrl $GitFolderName" -WorkingDirectory $Path
-        }
-
-        function GitPull ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName)
-        {
-            $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
-            
-            $workingDirectory = if ($GitFolderName -eq "")
-            {
-                Join-Path $Path $repository
-            }
-            else
-            {
-                Join-Path $Path $GitFolderName
-            }
-            
-            # git pull
-            "Pulling Repository '{0}' at '{1}'" -f $repository, $workingDirectory | WriteMessage
-            GitCommand -Arguments "pull" -WorkingDirectory $workingDirectory
-        }
-
-        function GitCommand 
-        {
-            [OutputType([PSCustomObject])]
-            [CmdletBinding()]
-            param
-            (
-                [Parameter(Mandatory = 1, Position = 0)]
-                [string]$Arguments,
-        
-                [Parameter(Mandatory = 0, Position = 1)]
-                [string]$WorkingDirectory = ".",
-
-                [Parameter(Mandatory = 0, Position = 2)]
-                [int]$TimeoutMS = $GitContinuousPull.TimeoutMS
-            )
-
-            end
-            {
-                try
-                {
-                    # new GitProcess
-                    $gitProcess = NewGitProcess -Arguments $Arguments -WorkingDirectory $WorkingDirectory
-                
-                    # Event Handler for Output
-                    $stdEvent = Register-ObjectEvent -InputObject $gitProcess -EventName OutputDataReceived -Action $scripBlock -MessageData $stdSb
-                    $errorEvent = Register-ObjectEvent -InputObject $gitProcess -EventName ErrorDataReceived -Action $scripBlock -MessageData $errorSb
-
-                    # execution
-                    $gitProcess.Start() > $null
-                    $gitProcess.BeginOutputReadLine()
-                    $gitProcess.BeginErrorReadLine()
-
-                    # wait for complete
-                    WaitProcessComplete -Process $gitProcess -TimeoutMS $TimeoutMS
-
-                    # verbose Event Result
-                    $stdEvent, $errorEvent | VerboseOutput
-
-                    # output
-                    return GetCommandResult -Process $gitProcess -StandardStringBuilder $stdSb -ErrorStringBuilder $errorSb
-                }
-                finally
-                {
-                    if ($null -ne $gitProcess){ $gitProcess.Dispose() }
-                    if ($null -ne $stdEvent){ Unregister-Event -SourceIdentifier $stdEvent.Name }
-                    if ($null -ne $errorEvent){ Unregister-Event -SourceIdentifier $errorEvent.Name }
-                    if ($null -ne $stdEvent){ $stdEvent.Dispose() }
-                    if ($null -ne $errorEvent){ $errorEvent.Dispose() }        
-                }
-            }
-
-            begin
-            {
-                # Prerequisites       
-                $stdSb = New-Object -TypeName System.Text.StringBuilder
-                $errorSb = New-Object -TypeName System.Text.StringBuilder
-                $scripBlock = 
-                {
-                    if (-not [String]::IsNullOrEmpty($EventArgs.Data))
-                    {
-                        
-                        $Event.MessageData.AppendLine($Event.SourceEventArgs.Data)
-                    }
-                }
-
-                function NewGitProcess ([string]$Arguments, [string]$WorkingDirectory)
-                {
-                    "Creating Git Process with Argument '{0}', WorkingDirectory '{1}'" -f $Arguments, $WorkingDirectory | VerboseOutput
-                    "Execute git command : 'git {0}'" -f $Arguments, $WorkingDirectory | VerboseOutput
-                    # ProcessStartInfo
-                    $psi = New-object System.Diagnostics.ProcessStartInfo 
-                    $psi.CreateNoWindow = $true
-                    $psi.LoadUserProfile = $true
-                    $psi.UseShellExecute = $false
-                    $psi.RedirectStandardOutput = $true
-                    $psi.RedirectStandardError = $true
-                    $psi.FileName = "git.exe"
-                    $psi.Arguments+= $Arguments
-                    $psi.WorkingDirectory = $WorkingDirectory
-
-                    # Set Process
-                    $process = New-Object System.Diagnostics.Process 
-                    $process.StartInfo = $psi
-                    return $process
-                }
-
-                function WaitProcessComplete ([System.Diagnostics.Process]$Process, [int]$TimeoutMS)
-                {
-                    "Waiting for git command complete. It will Timeout in {0}ms" -f $TimeoutMS | VerboseOutput
-                    $isComplete = $Process.WaitForExit($TimeoutMS)
-                    if (-not $isComplete)
-                    {
-                        "Timeout detected for {0}ms. Kill process immediately" -f $timeoutMS | VerboseOutput
-                        $Process.Kill()
-                        $Process.CancelOutputRead()
-                        $Process.CancelErrorRead()
-                    }
-                }
-
-                function GetCommandResult ([System.Diagnostics.Process]$Process, [System.Text.StringBuilder]$StandardStringBuilder, [System.Text.StringBuilder]$ErrorStringBuilder)
-                {
-                    'Get git command result string.' | VerboseOutput
-                    $standardString = $StandardStringBuilder.ToString()
-                    $errorString = $ErrorStringBuilder.ToString()
-                    if(($process.ExitCode -eq 0) -and ($standardString -eq "") -and ($errorString -ne ""))
-                    {
-                        $standardOutput = $errorString
-                        $errorOutput = ""
-                    }
-                    else
-                    {
-                        $standardOutput = $standardString
-                        $errorOutput = $errorString
-                    }
-                    return [PSCustomObject]@{
-                        StandardOutput = $standardOutput
-                        ErrorOutput = $errorOutput
-                        ExitCode = $process.ExitCode
-                    }
-                }
-
-                filter VerboseOutput
-                {
-                    $_ | Out-String -Stream | Write-Verbose
-                }
-            }
-        }
-
         function NewFolder ([string]$Path)
         {
             if (Test-Path $Path){ return $false; }
@@ -384,6 +229,10 @@ function Start-GitContinuousPull
         }
     }
 }
+
+#endregion
+
+#region git credential on config helper
 
 function Set-GitContinuousPullGitConfig
 {
@@ -448,6 +297,198 @@ function Set-GitContinuousPullGitConfig
     }
     ShowGitConfig
 }
+
+#endregion
+
+#region Git Helper
+
+function GetRepositoryName ([uri]$RepositoryUrl)
+{
+    return (Split-Path $RepositoryUrl -Leaf) -split "\.git" | select -First 1
+}
+
+function GetWorkingDirectory ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName, [string]$Repository)
+{
+    $workingDirectory = if ($GitFolderName -eq "")
+    {
+        Join-Path $Path $repository
+    }
+    else
+    {
+        Join-Path $Path $GitFolderName
+    }
+    return $workingDirectory    
+}
+
+function GitClone ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName)
+{
+    $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
+
+    # Folder checking
+    $created = if ($GitFolderName -eq "")
+    {
+        NewFolder -Path (Join-Path $Path $repository)
+    }
+    else
+    {
+        NewFolder -Path (Join-Path $Path $GitFolderName)
+    }
+    if ($created -eq $false){ "Repository already cloned to '{0}'. Skip clone repository : '{1}'." -f $created, $repository | WriteMessage; return; }
+
+    # git command
+    "Cloning Repository '{0}' to '{1}'" -f $repository, $Path | WriteMessage
+    GitCommand -Arguments "clone $RepositoryUrl $GitFolderName" -WorkingDirectory $Path
+}
+
+function GitPull ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName)
+{
+    $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
+    $workingDirectory = GetWorkingDirectory -Path $Path -RepositoryUrl $RepositoryUrl -GitFolderName $GitFolderName -Repository $repository
+            
+    # git command
+    "Pulling Repository '{0}' at '{1}'" -f $repository, $workingDirectory | WriteMessage
+    GitCommand -Arguments "pull" -WorkingDirectory $workingDirectory
+}
+
+function GitCheckOut ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName, [string]$Branch)
+{
+    $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
+    $workingDirectory = GetWorkingDirectory -Path $Path -RepositoryUrl $RepositoryUrl -GitFolderName $GitFolderName -Repository $repository
+            
+    # git command
+    "Checkout Repository '{0}' at '{1}' to Branch '{2}'" -f $repository, $workingDirectory, $Branch | WriteMessage
+    GitCommand -Arguments "checkout $Branch" -WorkingDirectory $workingDirectory
+}
+
+function GitCommand 
+{
+    [OutputType([PSCustomObject])]
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = 1, Position = 0)]
+        [string]$Arguments,
+        
+        [Parameter(Mandatory = 0, Position = 1)]
+        [string]$WorkingDirectory = ".",
+
+        [Parameter(Mandatory = 0, Position = 2)]
+        [int]$TimeoutMS = $GitContinuousPull.TimeoutMS
+    )
+
+    end
+    {
+        try
+        {
+            # new GitProcess
+            $gitProcess = NewGitProcess -Arguments $Arguments -WorkingDirectory $WorkingDirectory
+                
+            # Event Handler for Output
+            $stdEvent = Register-ObjectEvent -InputObject $gitProcess -EventName OutputDataReceived -Action $scripBlock -MessageData $stdSb
+            $errorEvent = Register-ObjectEvent -InputObject $gitProcess -EventName ErrorDataReceived -Action $scripBlock -MessageData $errorSb
+
+            # execution
+            $gitProcess.Start() > $null
+            $gitProcess.BeginOutputReadLine()
+            $gitProcess.BeginErrorReadLine()
+
+            # wait for complete
+            WaitProcessComplete -Process $gitProcess -TimeoutMS $TimeoutMS
+
+            # verbose Event Result
+            $stdEvent, $errorEvent | VerboseOutput
+
+            # output
+            return GetCommandResult -Process $gitProcess -StandardStringBuilder $stdSb -ErrorStringBuilder $errorSb
+        }
+        finally
+        {
+            if ($null -ne $gitProcess){ $gitProcess.Dispose() }
+            if ($null -ne $stdEvent){ Unregister-Event -SourceIdentifier $stdEvent.Name }
+            if ($null -ne $errorEvent){ Unregister-Event -SourceIdentifier $errorEvent.Name }
+            if ($null -ne $stdEvent){ $stdEvent.Dispose() }
+            if ($null -ne $errorEvent){ $errorEvent.Dispose() }        
+        }
+    }
+
+    begin
+    {
+        # Prerequisites       
+        $stdSb = New-Object -TypeName System.Text.StringBuilder
+        $errorSb = New-Object -TypeName System.Text.StringBuilder
+        $scripBlock = 
+        {
+            if (-not [String]::IsNullOrEmpty($EventArgs.Data))
+            {
+                        
+                $Event.MessageData.AppendLine($Event.SourceEventArgs.Data)
+            }
+        }
+
+        function NewGitProcess ([string]$Arguments, [string]$WorkingDirectory)
+        {
+            "Creating Git Process with Argument '{0}', WorkingDirectory '{1}'" -f $Arguments, $WorkingDirectory | VerboseOutput
+            "Execute git command : 'git {0}'" -f $Arguments, $WorkingDirectory | VerboseOutput
+            # ProcessStartInfo
+            $psi = New-object System.Diagnostics.ProcessStartInfo 
+            $psi.CreateNoWindow = $true
+            $psi.LoadUserProfile = $true
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.FileName = "git.exe"
+            $psi.Arguments+= $Arguments
+            $psi.WorkingDirectory = $WorkingDirectory
+
+            # Set Process
+            $process = New-Object System.Diagnostics.Process 
+            $process.StartInfo = $psi
+            return $process
+        }
+
+        function WaitProcessComplete ([System.Diagnostics.Process]$Process, [int]$TimeoutMS)
+        {
+            "Waiting for git command complete. It will Timeout in {0}ms" -f $TimeoutMS | VerboseOutput
+            $isComplete = $Process.WaitForExit($TimeoutMS)
+            if (-not $isComplete)
+            {
+                "Timeout detected for {0}ms. Kill process immediately" -f $timeoutMS | VerboseOutput
+                $Process.Kill()
+                $Process.CancelOutputRead()
+                $Process.CancelErrorRead()
+            }
+        }
+
+        function GetCommandResult ([System.Diagnostics.Process]$Process, [System.Text.StringBuilder]$StandardStringBuilder, [System.Text.StringBuilder]$ErrorStringBuilder)
+        {
+            'Get git command result string.' | VerboseOutput
+            $standardString = $StandardStringBuilder.ToString()
+            $errorString = $ErrorStringBuilder.ToString()
+            if(($process.ExitCode -eq 0) -and ($standardString -eq "") -and ($errorString -ne ""))
+            {
+                $standardOutput = $errorString
+                $errorOutput = ""
+            }
+            else
+            {
+                $standardOutput = $standardString
+                $errorOutput = $errorString
+            }
+            return [PSCustomObject]@{
+                StandardOutput = $standardOutput
+                ErrorOutput = $errorOutput
+                ExitCode = $process.ExitCode
+            }
+        }
+
+        filter VerboseOutput
+        {
+            $_ | Out-String -Stream | Write-Verbose
+        }
+    }
+}
+
+#endregion
 
 #-- Private Loading Module Parameters --#
 # contains default base configuration, may not be override without version update.
