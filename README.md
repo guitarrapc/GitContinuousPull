@@ -72,6 +72,27 @@ $param = @(
 $param | %{Start-GitContinuousPull @_ -Verbose}
 ```
 
+You can specify Branch with ```Branch``` parameter. Default branch is **master**.  
+
+```PowerShell
+# Run as Administrator
+Import-Module GitContinuousPull -Force -Verbose
+
+# Automatically Clone -> Pull GitHub repository
+$param = @(
+    @{
+        RepositoryUrl = "https://github.com/guitarrapc/valentia.git"
+        GitPath = "C:\Repository"
+        LogFolderPath = "C:\logs\valentia"
+        LogName = "$((Get-Date).ToString("yyyyMMdd-HHmmss")).log"
+        PostAction = { . C:\Repository\valentia\valentia\Tools\install.ps1}
+        Branch = "branchname"
+    }
+)
+
+$param | %{Start-GitContinuousPull @_ -Verbose}
+```
+
 Prerequisite
 ----
 
