@@ -120,14 +120,9 @@ function Start-GitContinuousPull
         $gitClone = GitClone @gitParameter
         if (-not [String]::IsNullOrWhiteSpace($gitClone.StandardOutput)){ $gitClone.StandardOutput | WriteMessage }
         if (-not [String]::IsNullOrWhiteSpace($gitClone.ErrorOutput)){ $gitClone.ErrorOutput | WriteMessage }
-
-        # got checkout
-        $gitCheckout = GitCheckOut @gitParameter -Branch $Branch
-        if (-not [String]::IsNullOrWhiteSpace($gitCheckout.StandardOutput)){ $gitCheckout.StandardOutput | WriteMessage }
-        if (-not [String]::IsNullOrWhiteSpace($gitCheckout.ErrorOutput)){ $gitCheckout.ErrorOutput | WriteMessage }
-        
+       
         # git pull
-        $gitPull = GitPull @gitParameter
+        $gitPull = GitPull @gitParameter -Branch $Branch
         if (-not [String]::IsNullOrWhiteSpace($gitPull.StandardOutput)){ $gitPull.StandardOutput | WriteMessage }
         if ((-not [String]::IsNullOrWhiteSpace($gitPull.ErrorOutput)) -and ($gitPull.ErrorOutput -ne $gitPull.StandardOutput)){ $gitPull.ErrorOutput | WriteMessage }
             
@@ -340,24 +335,14 @@ function GitClone ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName)
     GitCommand -Arguments "clone $RepositoryUrl $GitFolderName" -WorkingDirectory $Path
 }
 
-function GitPull ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName)
+function GitPull ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName, [string]$Branch)
 {
     $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
     $workingDirectory = GetWorkingDirectory -Path $Path -RepositoryUrl $RepositoryUrl -GitFolderName $GitFolderName -Repository $repository
             
     # git command
-    "Pulling Repository '{0}' at '{1}'" -f $repository, $workingDirectory | WriteMessage
-    GitCommand -Arguments "pull" -WorkingDirectory $workingDirectory
-}
-
-function GitCheckOut ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName, [string]$Branch)
-{
-    $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
-    $workingDirectory = GetWorkingDirectory -Path $Path -RepositoryUrl $RepositoryUrl -GitFolderName $GitFolderName -Repository $repository
-            
-    # git command
-    "Checkout Repository '{0}' at '{1}' to Branch '{2}'" -f $repository, $workingDirectory, $Branch | WriteMessage
-    GitCommand -Arguments "checkout $Branch" -WorkingDirectory $workingDirectory
+    "Pulling Repository '{0}' at '{1}'. Branch {2}" -f $repository, $workingDirectory, $Branch | WriteMessage
+    GitCommand -Arguments "pull origin $Branch" -WorkingDirectory $workingDirectory
 }
 
 function GitCommand 
