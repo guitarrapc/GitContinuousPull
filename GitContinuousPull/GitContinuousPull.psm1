@@ -447,8 +447,8 @@ function GitCommand
         function GetCommandResult ([System.Diagnostics.Process]$Process, [System.Text.StringBuilder]$StandardStringBuilder, [System.Text.StringBuilder]$ErrorStringBuilder)
         {
             'Get git command result string.' | VerboseOutput
-            $standardString = $StandardStringBuilder.ToString()
-            $errorString = $ErrorStringBuilder.ToString()
+            $standardString = $StandardStringBuilder.ToString().TrimEnd()
+            $errorString = $ErrorStringBuilder.ToString().TrimEnd()
             if(($process.ExitCode -eq 0) -and ($standardString -eq "") -and ($errorString -ne ""))
             {
                 $standardOutput = $errorString
