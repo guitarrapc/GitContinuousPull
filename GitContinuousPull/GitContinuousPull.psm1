@@ -387,11 +387,27 @@ function GitCommand
             $gitProcess.BeginOutputReadLine()
             $gitProcess.BeginErrorReadLine()
 
+            # /// TODO : TimeoutMS -> [TimeSpan]$TimeOut would be better.
             # wait for complete
-            WaitProcessComplete -Process $gitProcess -TimeoutMS $TimeoutMS
+            "Waiting for git command complete. It will Timeout in {0}ms" -f $TimeoutMS | VerboseOutput
+            $isTimeout = $false
+            if (-not $gitProcess.WaitForExit($TimeoutMS))
+            {
+                $isTimeout = $true
+                "Timeout detected for {0}ms. Kill process immediately" -f $timeoutMS | VerboseOutput
+                $gitProcess.Kill()
+                throw New-Object System.TimeoutException
+            }
+            $gitProcess.WaitForExit()
+            $gitProcess.CancelOutputRead()
+            $gitProcess.CancelErrorRead()
 
             # verbose Event Result
             $stdEvent, $errorEvent | VerboseOutput
+
+            # Unregister Event to recieve Asynchronous Event output (You should call before process.Dispose())
+            Unregister-Event -SourceIdentifier $stdEvent
+            Unregister-Event -SourceIdentifier $errorEvent
 
             # Write into Log
             WriteCommandResult -StandardStringBuilder $stdSb -ErrorStringBuilder $errorSb
@@ -412,10 +428,8 @@ function GitCommand
         finally
         {
             if ($null -ne $gitProcess){ $gitProcess.Dispose() }
-            if ($null -ne $stdEvent){ Unregister-Event -SourceIdentifier $stdEvent.Name }
-            if ($null -ne $errorEvent){ Unregister-Event -SourceIdentifier $errorEvent.Name }
             if ($null -ne $stdEvent){ $stdEvent.Dispose() }
-            if ($null -ne $errorEvent){ $errorEvent.Dispose() }        
+            if ($null -ne $errorEvent){ $errorEvent.Dispose() }
         }
     }
 
@@ -441,20 +455,7 @@ function GitCommand
             $process.StartInfo = $psi
             return $process
         }
-
-        function WaitProcessComplete ([System.Diagnostics.Process]$Process, [int]$TimeoutMS)
-        {
-            "Waiting for git command complete. It will Timeout in {0}ms" -f $TimeoutMS | VerboseOutput
-            $isComplete = $Process.WaitForExit($TimeoutMS)
-            if (-not $isComplete)
-            {
-                "Timeout detected for {0}ms. Kill process immediately" -f $timeoutMS | VerboseOutput
-                $Process.Kill()
-                $Process.CancelOutputRead()
-                $Process.CancelErrorRead()
-            }
-        }
-
+        
         function WriteCommandResult ([System.Text.StringBuilder]$StandardStringBuilder, [System.Text.StringBuilder]$ErrorStringBuilder)
         {
             'Get git command result string.' | VerboseOutput
