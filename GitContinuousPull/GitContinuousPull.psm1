@@ -117,17 +117,16 @@ function Start-GitContinuousPull
             GitFolderName = $GitFolderName
         }
         # git clone
-        $gitClone = GitClone @gitParameter
-        if (-not [String]::IsNullOrWhiteSpace($gitClone.StandardOutput)){ $gitClone.StandardOutput | WriteMessage }
-        if (-not [String]::IsNullOrWhiteSpace($gitClone.ErrorOutput)){ $gitClone.ErrorOutput | WriteMessage }
+        GitClone @gitParameter
        
         # git pull
-        $gitPull = GitPull @gitParameter -Branch $Branch
-        if (-not [String]::IsNullOrWhiteSpace($gitPull.StandardOutput)){ $gitPull.StandardOutput | WriteMessage }
-        if ((-not [String]::IsNullOrWhiteSpace($gitPull.ErrorOutput)) -and ($gitPull.ErrorOutput -ne $gitPull.StandardOutput)){ $gitPull.ErrorOutput | WriteMessage }
+        GitPull @gitParameter -Branch $Branch
             
         # PostAction
         if (($PostAction | measure).Count -eq 0){ return; }
+        $lastLine = $GitContinuousPull.StandardOutput | select -Last 1
+        Write-Verbose ("Last line of git command output : '{0}'" -f $lastLine)
+
         switch ($true)
         {
             $GitContinuousPull.firstClone
@@ -135,7 +134,7 @@ function Start-GitContinuousPull
                 "First time clone detected. Execute PostAction." | WriteMessage
                 $PostAction | %{& $_}
             }
-            (($GitContinuousPull.ExitCode -eq 0) -and (($gitPull.StandardOutput | select -Last 1) -notmatch "Already up-to-date."))
+            (($GitContinuousPull.ExitCode -eq 0) -and ($lastLine -notmatch "Already up-to-date."))
             {
                 "Pull detected change. Execute PostAction." | WriteMessage
                 $PostAction | %{& $_}
@@ -347,7 +346,7 @@ function GitPull ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName, [s
 
 function GitCommand 
 {
-    [OutputType([PSCustomObject])]
+    [OutputType([Void])]
     [CmdletBinding()]
     param
     (
@@ -369,6 +368,17 @@ function GitCommand
             $gitProcess = NewGitProcess -Arguments $Arguments -WorkingDirectory $WorkingDirectory
                 
             # Event Handler for Output
+            $stdSb = New-Object -TypeName System.Text.StringBuilder
+            $errorSb = New-Object -TypeName System.Text.StringBuilder
+            $scripBlock = 
+            {
+                $x = $Event.SourceEventArgs.Data
+                if (-not [String]::IsNullOrEmpty($x))
+                {
+                    [System.Console]::WriteLine($x)
+                    $Event.MessageData.AppendLine($x)
+                }
+            }
             $stdEvent = Register-ObjectEvent -InputObject $gitProcess -EventName OutputDataReceived -Action $scripBlock -MessageData $stdSb
             $errorEvent = Register-ObjectEvent -InputObject $gitProcess -EventName ErrorDataReceived -Action $scripBlock -MessageData $errorSb
 
@@ -383,8 +393,21 @@ function GitCommand
             # verbose Event Result
             $stdEvent, $errorEvent | VerboseOutput
 
-            # output
-            return GetCommandResult -Process $gitProcess -StandardStringBuilder $stdSb -ErrorStringBuilder $errorSb
+            # Write into Log
+            WriteCommandResult -StandardStringBuilder $stdSb -ErrorStringBuilder $errorSb
+
+             # Check Exit code
+            "Exit Code : {0}" -f $gitProcess.ExitCode | VerboseOutput
+            if ($gitProcess.ExitCode -ne 0)
+            {
+                $exception = ("git process Exit code detect '{0}'. Could not complete exception!" -f $gitProcess.ExitCode)
+                $exception | WriteFile
+                throw New-Object System.InvalidOperationException $exception
+            }
+            else
+            {
+                "Exit code '{0}' detected. Successfully complete git process." -f $gitProcess.ExitCode | WriteFile
+            }
         }
         finally
         {
@@ -398,18 +421,6 @@ function GitCommand
 
     begin
     {
-        # Prerequisites       
-        $stdSb = New-Object -TypeName System.Text.StringBuilder
-        $errorSb = New-Object -TypeName System.Text.StringBuilder
-        $scripBlock = 
-        {
-            if (-not [String]::IsNullOrEmpty($EventArgs.Data))
-            {
-                        
-                $Event.MessageData.AppendLine($Event.SourceEventArgs.Data)
-            }
-        }
-
         function NewGitProcess ([string]$Arguments, [string]$WorkingDirectory)
         {
             "Creating Git Process with Argument '{0}', WorkingDirectory '{1}'" -f $Arguments, $WorkingDirectory | VerboseOutput
@@ -444,7 +455,7 @@ function GitCommand
             }
         }
 
-        function GetCommandResult ([System.Diagnostics.Process]$Process, [System.Text.StringBuilder]$StandardStringBuilder, [System.Text.StringBuilder]$ErrorStringBuilder)
+        function WriteCommandResult ([System.Text.StringBuilder]$StandardStringBuilder, [System.Text.StringBuilder]$ErrorStringBuilder)
         {
             'Get git command result string.' | VerboseOutput
             $standardString = $StandardStringBuilder.ToString().TrimEnd()
@@ -459,16 +470,23 @@ function GitCommand
                 $standardOutput = $standardString
                 $errorOutput = $errorString
             }
-            return [PSCustomObject]@{
-                StandardOutput = $standardOutput
-                ErrorOutput = $errorOutput
-                ExitCode = $process.ExitCode
-            }
+
+            # "Already up-to-date" checking
+            $GitContinuousPull.StandardOutput = $standardOutput
+
+            # Output result to log at once. not per output line.
+            $standardOutput | WriteFile
+            $errorOutput | WriteFile
         }
 
         filter VerboseOutput
         {
             $_ | Out-String -Stream | Write-Verbose
+        }
+
+        filter WriteFile
+        {
+            $_ | Out-String -Stream | Out-File -FilePath $GitContinuousPull.log.FullPath -Encoding $GitContinuousPull.fileEncode -Force -Append
         }
     }
 }
