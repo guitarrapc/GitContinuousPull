@@ -357,7 +357,7 @@ function GitCommand
         [string]$WorkingDirectory = ".",
 
         [Parameter(Mandatory = 0, Position = 2)]
-        [int]$TimeoutMS = $GitContinuousPull.TimeoutMS
+        [TimeSpan]$Timeout = $GitContinuousPull.Timeout
     )
 
     end
@@ -387,14 +387,13 @@ function GitCommand
             $gitProcess.BeginOutputReadLine()
             $gitProcess.BeginErrorReadLine()
 
-            # /// TODO : TimeoutMS -> [TimeSpan]$TimeOut would be better.
             # wait for complete
-            "Waiting for git command complete. It will Timeout in {0}ms" -f $TimeoutMS | VerboseOutput
+            "Waiting for git command complete. It will Timeout in {0}ms" -f $Timeout | VerboseOutput
             $isTimeout = $false
-            if (-not $gitProcess.WaitForExit($TimeoutMS))
+            if (-not $gitProcess.WaitForExit([TimeSpan]::FromMilliseconds($Timeout.TotalMilliseconds)))
             {
                 $isTimeout = $true
-                "Timeout detected for {0}ms. Kill process immediately" -f $timeoutMS | VerboseOutput
+                "Timeout detected for {0}ms. Kill process immediately" -f $timeout | VerboseOutput
                 $gitProcess.Kill()
                 throw New-Object System.TimeoutException
             }
@@ -525,6 +524,6 @@ $GitContinuousPull.preference = [ordered]@{
 $GitContinuousPull.log = @{}
 $GitContinuousPull.firstClone = $false
 $GitContinuousPull.ExitCode = 0
-$GitContinuousPull.TimeoutMS = 1200000 # 20min
+$GitContinuousPull.Timeout = [TimeSpan]::FromMinutes(20)
 
 Export-ModuleMember -Function * -Variable $GitContinuousPull.name
