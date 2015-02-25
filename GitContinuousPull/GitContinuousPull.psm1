@@ -390,7 +390,7 @@ function GitCommand
             # wait for complete
             "Waiting for git command complete. It will Timeout in {0}ms" -f $Timeout | VerboseOutput
             $isTimeout = $false
-            if (-not $gitProcess.WaitForExit([TimeSpan]::FromMilliseconds($Timeout.TotalMilliseconds)))
+            if (-not $gitProcess.WaitForExit([int]([TimeSpan]::FromMilliseconds($GitContinuousPull.Timeout.TotalMilliseconds).TotalMilliseconds)))
             {
                 $isTimeout = $true
                 "Timeout detected for {0}ms. Kill process immediately" -f $timeout | VerboseOutput
@@ -405,8 +405,8 @@ function GitCommand
             $stdEvent, $errorEvent | VerboseOutput
 
             # Unregister Event to recieve Asynchronous Event output (You should call before process.Dispose())
-            Unregister-Event -SourceIdentifier $stdEvent
-            Unregister-Event -SourceIdentifier $errorEvent
+            Unregister-Event -SourceIdentifier $stdEvent -ErrorAction SilentlyContinue
+            Unregister-Event -SourceIdentifier $errorEvent -ErrorAction SilentlyContinue
 
             # Write into Log
             WriteCommandResult -StandardStringBuilder $stdSb -ErrorStringBuilder $errorSb
