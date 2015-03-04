@@ -122,6 +122,9 @@ function Start-GitContinuousPull
         # git pull
         GitPull @gitParameter -Branch $Branch
             
+        # git submodule
+        GitSubmoduleUpdate @gitParameter
+
         # PostAction
         if (($PostAction | measure).Count -eq 0){ return; }
         $lastLine = $GitContinuousPull.StandardOutput | select -Last 1
@@ -133,13 +136,19 @@ function Start-GitContinuousPull
             {
                 "First time clone detected. Execute PostAction." | WriteMessage
                 $PostAction | %{& $_}
+                return;
             }
             (($GitContinuousPull.ExitCode -eq 0) -and ($lastLine -notmatch "Already up-to-date."))
             {
                 "Pull detected change. Execute PostAction." | WriteMessage
                 $PostAction | %{& $_}
+                return;
             }
-            default { "None of change for git detected. Skip PostAction."  | WriteMessage }
+            default
+            {
+                "None of change for git detected. Skip PostAction."  | WriteMessage
+                return;
+            }
         }
     }
     
@@ -342,6 +351,16 @@ function GitPull ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName, [s
     # git command
     "Pulling Repository '{0}' at '{1}'. Branch {2}" -f $repository, $workingDirectory, $Branch | WriteMessage
     GitCommand -Arguments "pull origin $Branch" -WorkingDirectory $workingDirectory
+}
+
+function GitSubmoduleUpdate ([string]$Path, [uri]$RepositoryUrl, [string]$GitFolderName)
+{
+    $repository = GetRepositoryName -RepositoryUrl $RepositoryUrl
+    $workingDirectory = GetWorkingDirectory -Path $Path -RepositoryUrl $RepositoryUrl -GitFolderName $GitFolderName -Repository $repository
+            
+    # git command
+    "Updating submodule recursively" | WriteMessage
+    GitCommand -Arguments "submodule update --init --recursive" -WorkingDirectory $workingDirectory
 }
 
 function GitCommand 
