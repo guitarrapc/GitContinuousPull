@@ -118,12 +118,12 @@ function Start-GitContinuousPull
         }
         # git clone
         GitClone @gitParameter
-       
-        # git pull
-        GitPull @gitParameter -Branch $Branch
-            
+          
         # git submodule
         GitSubmoduleUpdate @gitParameter
+
+        # git pull
+        GitPull @gitParameter -Branch $Branch
 
         # PostAction
         if (($PostAction | measure).Count -eq 0){ return; }
