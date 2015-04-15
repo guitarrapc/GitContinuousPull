@@ -74,24 +74,27 @@ function Start-GitContinuousPull
         [Parameter(Position = 0, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Git Repository Url")]
         [uri]$RepositoryUrl,
 
-        [Parameter(Position = 0, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Git Branch Name. Default : master")]
+        [Parameter(Position = 1, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Git Branch Name. Default : master")]
         [ValidateNotNullOrEmpty()]
         [string]$Branch = "master",
 
-        [Parameter(Position = 1, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input Full path of Git Repository Parent Folder")]
+        [Parameter(Position = 2, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input Full path of Git Repository Parent Folder")]
         [string]$GitPath,
  
-        [Parameter(Position = 2, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input path of Log Folder")]
+        [Parameter(Position = 3, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "TimeSpan for target git process alive duration")]
+        [timespan]$KillGitTimeSpan = [TimeSpan]::FromMinutes(10),
+
+        [Parameter(Position = 4, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input path of Log Folder")]
         [string]$LogFolderPath,
 
-        [Parameter(Position = 3, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input name of Log")]
+        [Parameter(Position = 5, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input name of Log")]
         [ValidateNotNullOrEmpty()]
         [string]$LogName,
 
-        [Parameter(Position = 4, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Script Block to execute when git detect change.")]
+        [Parameter(Position = 6, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Script Block to execute when git detect change.")]
         [scriptBlock[]]$PostAction,
 
-        [Parameter(Position = 5, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input Git target folder name to be created in local.")]
+        [Parameter(Position = 7, Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Input Git target folder name to be created in local.")]
         [string]$GitFolderName = ""
     )
 
@@ -101,7 +104,7 @@ function Start-GitContinuousPull
         LogSetup -LogPath $LogFolderPath -LogName $LogName
 
         # Git process checking.
-        KillGit
+        KillGit -KillGitTimeSpan $KillGitTimeSpan
 
         # Git credential checking.
         GitCred
@@ -158,13 +161,22 @@ function Start-GitContinuousPull
         if ($RepositoryUrl.Count -ne $GitPath.Count){ throw New-Object System.ArgumentException ("Argument for Repogitory & GitPath not match exception.") }
         if (-not $RepositoryUrl.AbsoluteUri.EndsWith(".git")){ throw New-Object System.ArgumentException ("Wrong argument string found exception. RepositoryUrl '{0}' not endwith '.git'." -f $RepositoryUrl.AbsoluteUri) }
 
-        function KillGit
+        function KillGit ([TimeSpan]$KillGitTimeSpan)
         {
-            $IsgitExist = Get-Process | where Name -like "git*" | Stop-Process -Force -PassThru
-            if ($IsgitExist.Count -ne 0)
+            $now = [DateTime]::Now
+            
+            # filter git process whee alive more than threshold
+            $gitProcess = Get-Process | where Name -like "git*" | where {(New-TimeSpan $_.StartTime $now) -ge $KillGitTimeSpan}
+
+            if ($gitProcess.Count -eq 0)
             {
-                $IsgitExist | %{ "git process found. Killed process Name : '{0}', Id : '{1}'" -f $_.Name, $_.Id | WriteMessage }
+                # skip
+                "Longer than {0}min alive git process not found. Skip killing process." -f $KillGitTimeSpan.TotalMinutes | WriteMessage;
+                return;
             }
+            
+            # kill process
+            $gitProcess | Stop-Process -Force -PassThru | %{ "Longer than {0}min alive git process found. Killed process Name : '{1}', Id : '{2}'" -f $KillGitTimeSpan.TotalMinutes, $_.Name, $_.Id | WriteMessage }
         }
                     
         function GitCred
