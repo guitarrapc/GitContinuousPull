@@ -396,41 +396,50 @@ function GitCommand
         try
         {
             # new GitProcess
-            $gitProcess = NewGitProcess -Arguments $Arguments -WorkingDirectory $WorkingDirectory
+            $process = NewGitProcess -Arguments $Arguments -WorkingDirectory $WorkingDirectory
                 
             # Event Handler for Output
-            $stdSb = New-Object -TypeName System.Text.StringBuilder
-            $errorSb = New-Object -TypeName System.Text.StringBuilder
+            $stdMessageData = [PSCustomObject]@{
+                StringBuilder = New-Object -TypeName System.Text.StringBuilder
+                ConsoleOutput = !$RedirectStandardOutput
+            }
+            $errorMessageData = [PSCustomObject]@{
+                StringBuilder = New-Object -TypeName System.Text.StringBuilder
+                ConsoleOutput = !$RedirectStandardError
+            }
             $scripBlock = 
             {
                 $x = $Event.SourceEventArgs.Data
                 if (-not [String]::IsNullOrEmpty($x))
                 {
-                    [System.Console]::WriteLine($x)
-                    $Event.MessageData.AppendLine($x)
+                    if($Event.MessageData.ConsoleOutput)
+					{
+						[System.Console]::WriteLine($x)
+					}
+                    $Event.MessageData.StringBuilder.AppendLine($x)
                 }
             }
-            $stdEvent = Register-ObjectEvent -InputObject $gitProcess -EventName OutputDataReceived -Action $scripBlock -MessageData $stdSb
-            $errorEvent = Register-ObjectEvent -InputObject $gitProcess -EventName ErrorDataReceived -Action $scripBlock -MessageData $errorSb
+            $stdEvent = Register-ObjectEvent -InputObject $process -EventName OutputDataReceived -Action $scripBlock -MessageData $stdMessageData
+            $errorEvent = Register-ObjectEvent -InputObject $process -EventName ErrorDataReceived -Action $scripBlock -MessageData $errorMessageData
 
             # execution
-            $gitProcess.Start() > $null
-            $gitProcess.BeginOutputReadLine()
-            $gitProcess.BeginErrorReadLine()
+            $process.Start() > $null
+            $process.BeginOutputReadLine()
+            $process.BeginErrorReadLine()
 
             # wait for complete
             "Waiting for git command complete. It will Timeout in {0}ms" -f $Timeout | VerboseOutput
             $isTimeout = $false
-            if (-not $gitProcess.WaitForExit([int]([TimeSpan]::FromMilliseconds($GitContinuousPull.Timeout.TotalMilliseconds).TotalMilliseconds)))
+            if (-not $process.WaitForExit([int]([TimeSpan]::FromMilliseconds($GitContinuousPull.Timeout.TotalMilliseconds).TotalMilliseconds)))
             {
                 $isTimeout = $true
                 "Timeout detected for {0}ms. Kill process immediately" -f $timeout | VerboseOutput
-                $gitProcess.Kill()
+                $process.Kill()
                 throw New-Object System.TimeoutException
             }
-            $gitProcess.WaitForExit()
-            $gitProcess.CancelOutputRead()
-            $gitProcess.CancelErrorRead()
+            $process.WaitForExit()
+            $process.CancelOutputRead()
+            $process.CancelErrorRead()
 
             # verbose Event Result
             $stdEvent, $errorEvent | VerboseOutput
@@ -440,26 +449,26 @@ function GitCommand
             Unregister-Event -SourceIdentifier $errorEvent -ErrorAction SilentlyContinue
 
             # Write into Log
-            WriteCommandResult -StandardStringBuilder $stdSb -ErrorStringBuilder $errorSb
+            WriteCommandResult -StandardStringBuilder $stdMessageData.StringBuilder -ErrorStringBuilder $errorMessageData.StringBuilder
 
              # Check Exit code
             "Exit Code : {0}" -f $gitProcess.ExitCode | VerboseOutput
-            if ($gitProcess.ExitCode -ne 0)
+            if ($process.ExitCode -ne 0)
             {
-                $exception = ("git process Exit code detect '{0}'. Could not complete exception!" -f $gitProcess.ExitCode)
+                $exception = ("git process Exit code detect '{0}'. Could not complete exception!" -f $process.ExitCode)
                 $exception | WriteFile
                 throw New-Object System.InvalidOperationException $exception
             }
             else
             {
-                "Exit code '{0}' detected. Successfully complete git process." -f $gitProcess.ExitCode | WriteFile
+                "Exit code '{0}' detected. Successfully complete git process." -f $process.ExitCode | WriteFile
             }
         }
         finally
         {
-            if ($null -ne $gitProcess){ $gitProcess.Dispose() }
-            if ($null -ne $stdEvent){ $stdEvent.Dispose() }
-            if ($null -ne $errorEvent){ $errorEvent.Dispose() }
+            if ($null -ne $gitProcess){ $process.Dispose() }
+            if ($null -ne $stdEvent){ $stdEvent.StopJob(); $stdEvent.Dispose() }
+            if ($null -ne $errorEvent){ $errorEvent.StopJob(); $errorEvent.Dispose() }
         }
     }
 
@@ -481,7 +490,7 @@ function GitCommand
             $psi.WorkingDirectory = $WorkingDirectory
 
             # Set Process
-            $process = New-Object System.Diagnostics.Process 
+            $private:process = New-Object System.Diagnostics.Process 
             $process.StartInfo = $psi
             return $process
         }
